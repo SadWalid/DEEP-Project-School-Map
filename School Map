@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEEP Endline &mdash; School Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --ink:#1B2E28;
+    --paper:#F5F3EE;
+    --panel:#FFFFFF;
+    --forest:#1B4332;
+    --forest-2:#2D6A4F;
+    --sage:#B7CFC4;
+    --amber:#E08E00;
+    --line:#DDD8CC;
+    --muted:#6B7A73;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--paper);}
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header{
+    background:var(--forest);
+    color:#F5F3EE;
+    padding:14px 22px;
+    display:flex;
+    align-items:baseline;
+    gap:18px;
+    flex-wrap:wrap;
+    border-bottom:3px solid var(--amber);
+  }
+  header h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px;}
+  header .stat{font-size:13px;color:var(--sage);}
+  header .stat b{color:#fff;font-weight:650;}
+
+  #body{display:flex;flex:1;min-height:0;}
+
+  #sidebar{
+    width:340px;
+    min-width:340px;
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  #controls{padding:14px 16px 10px;border-bottom:1px solid var(--line);}
+  #controls label{display:block;font-size:11.5px;color:var(--muted);margin:9px 0 3px;text-transform:uppercase;letter-spacing:.5px;}
+  #controls select, #controls input{
+    width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:5px;
+    font-size:13.5px;background:#fff;color:var(--ink);
+  }
+  #note{padding:10px 16px;font-size:11.5px;color:var(--muted);line-height:1.5;border-bottom:1px solid var(--line);background:#FBFAF6;}
+
+  #list{flex:1;overflow-y:auto;}
+  .school-row{
+    padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;
+  }
+  .school-row:hover{background:#F0EFE7;}
+  .school-row.active{background:#E8F0EA;border-left:3px solid var(--forest-2);}
+  .school-row .nm{font-weight:600;font-size:12.8px;line-height:1.3;}
+  .school-row .meta{color:var(--muted);font-size:11.5px;margin-top:2px;}
+  .daychip{
+    display:inline-block;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:650;color:#fff;margin-right:6px;
+  }
+
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;}
+
+  .leaflet-popup-content{font-size:13px;line-height:1.5;min-width:180px;}
+  .leaflet-popup-content b{font-size:13.5px;}
+
+  #legend{
+    position:absolute;bottom:18px;left:358px;z-index:500;background:rgba(255,255,255,.95);
+    border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:11.5px;color:var(--muted);
+    max-width:360px;
+  }
+  #legend b{color:var(--ink);}
+
+  ::-webkit-scrollbar{width:9px;}
+  ::-webkit-scrollbar-thumb{background:#CFC9BA;border-radius:5px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>DEEP Endline Survey &mdash; School Map</h1>
+    <span class="stat"><b id="statSchools"></b> schools</span>
+    <span class="stat"><b id="statStudents"></b> students</span>
+    <span class="stat"><b>8</b> upazilas</span>
+    <span class="stat"><b>15</b> field days</span>
+  </header>
+  <div id="body">
+    <div id="sidebar">
+      <div id="controls">
+        <label>Deployment day</label>
+        <select id="dayFilter"></select>
+        <label>Upazila</label>
+        <select id="districtFilter"></select>
+        <label>Search school</label>
+        <input id="searchBox" type="text" placeholder="School name or ID...">
+      </div>
+      <div id="note">
+        Pins are placed within the correct upazila but are not exact GPS coordinates &mdash; web search can't reliably pinpoint every rural school. Diamond markers are upazila centers. For turn-by-turn routing, replace with GPS points captured on a field visit.
+      </div>
+      <div id="list"></div>
+    </div>
+    <div style="position:relative;flex:1;">
+      <div id="map"></div>
+      <div id="legend"><b>Color = deployment day</b> (1&ndash;15, see dropdown). Grey = not yet scheduled (0 students recorded).</div>
+    </div>
+  </div>
+</div>
+<script>
+const DATA = {"schools": [{"id": "01-006", "name": "BHATGAON DR. M AMANULLAH HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 1, "girls": 8, "total": 9, "day": 1, "lat": 24.411221, "lon": 90.380756}, {"id": "01-009", "name": "ASHKA HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 4, "girls": 6, "total": 10, "day": 2, "lat": 24.394696, "lon": 90.396477}, {"id": "01-004", "name": "MEDILA ADARSHA HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 9, "girls": 5, "total": 14, "day": 2, "lat": 24.438241, "lon": 90.371032}, {"id": "01-012", "name": "JAMIRAPARA S.M. HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 2, "girls": 14, "total": 16, "day": 2, "lat": 24.405833, "lon": 90.376218}, {"id": "01-003", "name": "BIRUNIA SADIR UDDIN MASTER HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 16, "girls": 4, "total": 20, "day": 2, "lat": 24.381064, "lon": 90.389499}, {"id": "01-014", "name": "PALGAON HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 12, "girls": 10, "total": 22, "day": 2, "lat": 24.406497, "lon": 90.369431}, {"id": "01-010", "name": "GOARI BHAWALIA BAZAR HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 24, "girls": 0, "total": 24, "day": 2, "lat": 24.381227, "lon": 90.364171}, {"id": "01-001", "name": "RAJAI HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 9, "girls": 19, "total": 28, "day": 1, "lat": 24.417395, "lon": 90.396622}, {"id": "01-008", "name": "SHAHID SAMSUDDIN HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 19, "girls": 9, "total": 28, "day": 1, "lat": 24.415367, "lon": 90.398057}, {"id": "01-013", "name": "KATLAMARY HIGH SCHOOL (Bhaluka)", "district": "Bhaluka", "boys": 13, "girls": 15, "total": 28, "day": 1, "lat": 24.37315, "lon": 90.382381}, {"id": "01-015", "name": "Sonaullah High School And College (Bhaluka)", "district": "Bhaluka", "boys": 9, "girls": 20, "total": 29, "day": 1, "lat": 24.422387, "lon": 90.353743}, {"id": "01-005", "name": "Al Hera Academy", "district": "Bhaluka", "boys": 11, "girls": 19, "total": 30, "day": 1, "lat": 24.387338, "lon": 90.381144}, {"id": "01-007", "name": "Bhoradoba High school", "district": "Bhaluka", "boys": 8, "girls": 22, "total": 30, "day": 1, "lat": 24.429206, "lon": 90.414119}, {"id": "01-011", "name": "Sayera Safayet School And College (Bhaluka)", "district": "Bhaluka", "boys": 17, "girls": 13, "total": 30, "day": 1, "lat": 24.421651, "lon": 90.369753}, {"id": "04-046", "name": "CHANDAR SATIA MODEL HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 6, "girls": 13, "total": 19, "day": 7, "lat": 24.749718, "lon": 90.584709}, {"id": "04-053", "name": "DHURUA NAZIM UDDIN HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 8, "girls": 11, "total": 19, "day": 7, "lat": 24.761956, "lon": 90.605701}, {"id": "04-054", "name": "BATANDAR HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 8, "girls": 11, "total": 19, "day": 7, "lat": 24.772257, "lon": 90.576294}, {"id": "04-048", "name": "THALE HOSSAIN KHAN HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 8, "girls": 12, "total": 20, "day": 7, "lat": 24.728153, "lon": 90.581442}, {"id": "04-057", "name": "BARABAGH HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 11, "girls": 10, "total": 21, "day": 7, "lat": 24.733521, "lon": 90.552967}, {"id": "04-058", "name": "DR. M. R. KARIM HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 8, "girls": 13, "total": 21, "day": 6, "lat": 24.752503, "lon": 90.535777}, {"id": "04-051", "name": "RAMGOPALPUR P.J.K. HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 13, "girls": 9, "total": 22, "day": 6, "lat": 24.770359, "lon": 90.599774}, {"id": "04-049", "name": "BALIZURI HIGH SCHOOL (EIIN: 111680)", "district": "Gouripur", "boys": 15, "girls": 9, "total": 24, "day": 6, "lat": 24.741002, "lon": 90.570603}, {"id": "04-060", "name": "MAIZHATI HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 6, "girls": 17, "total": 23, "day": 6, "lat": 24.747186, "lon": 90.564175}, {"id": "04-047", "name": "BHUTIERKONA ADARSHA HIGH SCHOOL AND COLLEGE (GOURIPUR)", "district": "Gouripur", "boys": 12, "girls": 13, "total": 25, "day": 6, "lat": 24.738809, "lon": 90.533646}, {"id": "04-055", "name": "NAHATA HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 11, "girls": 16, "total": 27, "day": 6, "lat": 24.745138, "lon": 90.575641}, {"id": "04-050", "name": "BHALUKAPUR HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 15, "girls": 14, "total": 29, "day": 6, "lat": 24.762324, "lon": 90.538877}, {"id": "04-056", "name": "SALIHOR HAZI AMIR UDDIN HIGH SCHOOL (GOURIPUR)", "district": "Gouripur", "boys": 13, "girls": 17, "total": 30, "day": 6, "lat": 24.727999, "lon": 90.567131}, {"id": "04-052", "name": "Mojaffar Ali Faquir School And College (GOURIPUR)", "district": "Gouripur", "boys": 2, "girls": 29, "total": 31, "day": 5, "lat": 24.757872, "lon": 90.584161}, {"id": "05-062", "name": "ST. ANDREW'S HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 6, "girls": 7, "total": 13, "day": 8, "lat": 25.159341, "lon": 90.330683}, {"id": "05-065", "name": "IDEAL HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 8, "girls": 7, "total": 15, "day": 8, "lat": 25.13891, "lon": 90.351325}, {"id": "05-064", "name": "BIROY DAKUNI HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 7, "girls": 9, "total": 16, "day": 7, "lat": 25.119429, "lon": 90.341095}, {"id": "05-067", "name": "CHARBANGALI NIGHT MONIDRA REMA MEMORIAL HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 10, "girls": 7, "total": 17, "day": 7, "lat": 25.157353, "lon": 90.34735}, {"id": "05-074", "name": "BAGHAITALA ADARSHA HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 1, "girls": 18, "total": 19, "day": 7, "lat": 25.108034, "lon": 90.306538}, {"id": "05-063", "name": "KOICHAPUR HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 14, "girls": 7, "total": 21, "day": 7, "lat": 25.151188, "lon": 90.345083}, {"id": "05-066", "name": "Ghoshber Joyramkura High School & College (HALUAGHAT)", "district": "Haluaghat", "boys": 8, "girls": 13, "total": 21, "day": 7, "lat": 25.155037, "lon": 90.338287}, {"id": "05-075", "name": "ATUAJANGAL JAMIRUDDIN HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 9, "girls": 14, "total": 23, "day": 7, "lat": 25.152163, "lon": 90.317607}, {"id": "05-071", "name": "JUGLI UNION HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 12, "girls": 11, "total": 23, "day": 8, "lat": 25.158733, "lon": 90.336343}, {"id": "05-073", "name": "GASHIGAON HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 14, "girls": 11, "total": 25, "day": 8, "lat": 25.11012, "lon": 90.314783}, {"id": "05-069", "name": "BAHIR SIMUL HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 13, "girls": 13, "total": 26, "day": 8, "lat": 25.152609, "lon": 90.36059}, {"id": "05-061", "name": "SWADESHI A. H. S. HIGH SCHOOL (HALUAGHAT)", "district": "Haluaghat", "boys": 15, "girls": 15, "total": 30, "day": 8, "lat": 25.103759, "lon": 90.323528}, {"id": "05-072", "name": "BHASHA SHAHEED ABDUL JABBAR SMRITY SCHOOL AND COLLEGE (HALUAGHAT)", "district": "Haluaghat", "boys": 0, "girls": 0, "total": 0, "day": 0, "lat": 25.123488, "lon": 90.326598}, {"id": "10-145", "name": "Badrakanda High School", "district": "Tarakanda", "boys": 7, "girls": 5, "total": 12, "day": 12, "lat": 24.843427, "lon": 90.487962}, {"id": "10-147", "name": "Chandpur High School", "district": "Tarakanda", "boys": 7, "girls": 7, "total": 14, "day": 12, "lat": 24.85611, "lon": 90.515191}, {"id": "10-144", "name": "Lautia High School", "district": "Tarakanda", "boys": 11, "girls": 5, "total": 16, "day": 12, "lat": 24.820652, "lon": 90.482859}, {"id": "10-136", "name": "Tharati High School", "district": "Tarakanda", "boys": 8, "girls": 9, "total": 17, "day": 12, "lat": 24.863357, "lon": 90.472186}, {"id": "10-140", "name": "Charpara High School", "district": "Tarakanda", "boys": 7, "girls": 10, "total": 17, "day": 12, "lat": 24.834736, "lon": 90.471518}, {"id": "10-142", "name": "Banpalasia High School", "district": "Tarakanda", "boys": 9, "girls": 9, "total": 18, "day": 12, "lat": 24.8621, "lon": 90.484366}, {"id": "10-146", "name": "Kamaria High School", "district": "Tarakanda", "boys": 10, "girls": 9, "total": 19, "day": 12, "lat": 24.885149, "lon": 90.465137}, {"id": "10-138", "name": "Charia High School", "district": "Tarakanda", "boys": 8, "girls": 12, "total": 20, "day": 13, "lat": 24.850726, "lon": 90.452381}, {"id": "10-135", "name": "Mozahardi High School", "district": "Tarakanda", "boys": 8, "girls": 13, "total": 21, "day": 12, "lat": 24.837556, "lon": 90.456911}, {"id": "10-149", "name": "Dhakir Kanda Habibur Rahman High School", "district": "Tarakanda", "boys": 12, "girls": 13, "total": 25, "day": 12, "lat": 24.85506, "lon": 90.47813}, {"id": "10-143", "name": "Kakni Model Academy High School", "district": "Tarakanda", "boys": 12, "girls": 14, "total": 26, "day": 12, "lat": 24.862983, "lon": 90.520376}, {"id": "10-139", "name": "Battabhat Para S.C. High School", "district": "Tarakanda", "boys": 7, "girls": 22, "total": 29, "day": 13, "lat": 24.840484, "lon": 90.497392}, {"id": "10-148", "name": "Ponguai Umed Ali High School", "district": "Tarakanda", "boys": 14, "girls": 16, "total": 30, "day": 13, "lat": 24.848243, "lon": 90.503321}, {"id": "06-086", "name": "BEGUM MONUARA JUNIOR SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 4, "girls": 5, "total": 9, "day": 10, "lat": 24.774542, "lon": 90.280971}, {"id": "06-076", "name": "ZAGIR UDDIN HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 8, "girls": 10, "total": 18, "day": 10, "lat": 24.755323, "lon": 90.26502}, {"id": "06-082", "name": "CHACHUA HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 16, "girls": 3, "total": 19, "day": 9, "lat": 24.763903, "lon": 90.237061}, {"id": "06-087", "name": "A. K. M. MOSHARRAF HOSSAIN HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 8, "girls": 11, "total": 19, "day": 9, "lat": 24.752855, "lon": 90.264892}, {"id": "06-084", "name": "PODURBARI HIGH SCHOOL (EIIN: 111939)", "district": "Muktagachha", "boys": 7, "girls": 13, "total": 20, "day": 9, "lat": 24.737972, "lon": 90.262122}, {"id": "06-090", "name": "GABTOLI HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 9, "girls": 12, "total": 21, "day": 9, "lat": 24.770861, "lon": 90.237915}, {"id": "06-077", "name": "BANBANGLA F.RAHMAN HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 9, "girls": 14, "total": 23, "day": 9, "lat": 24.768353, "lon": 90.237882}, {"id": "06-078", "name": "BERASHI DI-MUKHI HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 7, "girls": 17, "total": 24, "day": 9, "lat": 24.747835, "lon": 90.275208}, {"id": "06-080", "name": "LAXMIPUR BAHUMUKHI HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 11, "girls": 13, "total": 24, "day": 9, "lat": 24.748419, "lon": 90.246564}, {"id": "06-081", "name": "KAZI NAZRUL ISLAM HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 11, "girls": 13, "total": 24, "day": 9, "lat": 24.753704, "lon": 90.229643}, {"id": "06-088", "name": "NAZRUL ISLAM HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 20, "girls": 5, "total": 25, "day": 8, "lat": 24.776109, "lon": 90.256176}, {"id": "06-085", "name": "MOGALTULA SECONDARY SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 14, "girls": 11, "total": 25, "day": 9, "lat": 24.791013, "lon": 90.256484}, {"id": "06-089", "name": "KHERUAZANI HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 12, "girls": 14, "total": 26, "day": 8, "lat": 24.778409, "lon": 90.283716}, {"id": "06-083", "name": "MONTOLA HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 14, "girls": 14, "total": 28, "day": 8, "lat": 24.757829, "lon": 90.259842}, {"id": "06-079", "name": "DULLA HIGH SCHOOL (MUKTAGACHA)", "district": "Muktagachha", "boys": 17, "girls": 12, "total": 29, "day": 10, "lat": 24.784175, "lon": 90.264077}, {"id": "07-094", "name": "MRITYUNJOY SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 3, "girls": 7, "total": 10, "day": 10, "lat": 24.752196, "lon": 90.347245}, {"id": "11-153", "name": "ALMITOLA HIGH SCHOOL", "district": "Mymensingh", "boys": 0, "girls": 11, "total": 11, "day": 10, "lat": 24.759662, "lon": 90.360067}, {"id": "07-100", "name": "KAWATKHALI HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 5, "girls": 8, "total": 13, "day": 10, "lat": 24.778172, "lon": 90.368788}, {"id": "07-101", "name": "MIRKANDAPARA HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 7, "girls": 7, "total": 14, "day": 10, "lat": 24.77728, "lon": 90.363833}, {"id": "07-093", "name": "Kawnia High School", "district": "Mymensingh", "boys": 3, "girls": 13, "total": 16, "day": 10, "lat": 24.763981, "lon": 90.359275}, {"id": "11-151", "name": "NAMAKATLA SHEN HIGH SCHOOL", "district": "Mymensingh", "boys": 9, "girls": 7, "total": 16, "day": 11, "lat": 24.79293, "lon": 90.357431}, {"id": "11-152", "name": "GHAGRA UNION HIGH SCHOOL", "district": "Mymensingh", "boys": 2, "girls": 14, "total": 16, "day": 11, "lat": 24.786116, "lon": 90.334142}, {"id": "07-103", "name": "BIDYAGANJ R.B. HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 6, "girls": 12, "total": 18, "day": 11, "lat": 24.758231, "lon": 90.36362}, {"id": "11-154", "name": "Porangonj High School", "district": "Mymensingh", "boys": 6, "girls": 12, "total": 18, "day": 12, "lat": 24.760953, "lon": 90.347226}, {"id": "07-095", "name": "GHAGRA BARERA SECONDARY SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 9, "girls": 13, "total": 22, "day": 11, "lat": 24.775382, "lon": 90.355547}, {"id": "07-105", "name": "UTTAR DAPUNIA HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 14, "girls": 9, "total": 23, "day": 11, "lat": 24.784856, "lon": 90.376586}, {"id": "11-150", "name": "BEGUNBARI HIGH SCHOOL", "district": "Mymensingh", "boys": 9, "girls": 14, "total": 23, "day": 11, "lat": 24.786042, "lon": 90.339933}, {"id": "07-104", "name": "BHABAKHALI HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 11, "girls": 13, "total": 24, "day": 11, "lat": 24.784681, "lon": 90.367232}, {"id": "07-102", "name": "BANGLADESH RAILWAY GOVT. HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 10, "girls": 15, "total": 25, "day": 11, "lat": 24.766121, "lon": 90.386979}, {"id": "07-096", "name": "CHARNILOKHYIA HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 11, "girls": 15, "total": 26, "day": 11, "lat": 24.779128, "lon": 90.393856}, {"id": "07-097", "name": "CHARNILOKHYIA HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 12, "girls": 14, "total": 26, "day": 11, "lat": 24.776961, "lon": 90.335048}, {"id": "07-098", "name": "Khagdahor Hossain Memorial High School", "district": "Mymensingh", "boys": 13, "girls": 14, "total": 27, "day": 10, "lat": 24.774402, "lon": 90.385807}, {"id": "07-099", "name": "Holy Family School", "district": "Mymensingh", "boys": 7, "girls": 20, "total": 27, "day": 10, "lat": 24.770396, "lon": 90.324826}, {"id": "07-092", "name": "BORORCHAR HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 15, "girls": 14, "total": 29, "day": 10, "lat": 24.755567, "lon": 90.348752}, {"id": "07-091", "name": "SHAHID SMRITY HIGH SCHOOL (MYMENSINGH)", "district": "Mymensingh", "boys": 0, "girls": 0, "total": 0, "day": 0, "lat": 24.779933, "lon": 90.347473}, {"id": "03-041", "name": "HAREKRISHNA UNION HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 9, "girls": 6, "total": 15, "day": 5, "lat": 24.645192, "lon": 90.246573}, {"id": "03-042", "name": "KUSHMAIL UNION BADAR UDDIN HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 5, "girls": 10, "total": 15, "day": 5, "lat": 24.637789, "lon": 90.292892}, {"id": "03-043", "name": "JANATA HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 3, "girls": 15, "total": 18, "day": 5, "lat": 24.640975, "lon": 90.277363}, {"id": "03-045", "name": "RADHAKANAI HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 6, "girls": 12, "total": 18, "day": 5, "lat": 24.615915, "lon": 90.272541}, {"id": "02-027", "name": "ASIM IDEAL HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 12, "girls": 7, "total": 19, "day": 4, "lat": 24.660545, "lon": 90.285164}, {"id": "03-035", "name": "ALHERA ACADEMY (FULBARIA)", "district": "Fulbaria", "boys": 12, "girls": 7, "total": 19, "day": 4, "lat": 24.61799, "lon": 90.290121}, {"id": "02-030", "name": "SOWAITPUR HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 7, "girls": 13, "total": 20, "day": 4, "lat": 24.628923, "lon": 90.28986}, {"id": "02-026", "name": "ALAMIN HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 10, "girls": 11, "total": 21, "day": 4, "lat": 24.654406, "lon": 90.261833}, {"id": "03-034", "name": "BARUKA HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 9, "girls": 12, "total": 21, "day": 4, "lat": 24.623666, "lon": 90.256388}, {"id": "02-017", "name": "BETBARI THANARPAR HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 8, "girls": 14, "total": 22, "day": 4, "lat": 24.647477, "lon": 90.2678}, {"id": "02-016", "name": "KUSHMAIL TARAFDAR BARI HIGH SCHOOL (EIIN: 111444)", "district": "Fulbaria", "boys": 11, "girls": 12, "total": 23, "day": 4, "lat": 24.613524, "lon": 90.257472}, {"id": "02-029", "name": "BABUGANJ HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 16, "girls": 7, "total": 23, "day": 4, "lat": 24.614066, "lon": 90.26788}, {"id": "03-036", "name": "DHAMAR BOHUMUKHI HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 11, "girls": 12, "total": 23, "day": 4, "lat": 24.636902, "lon": 90.26468}, {"id": "03-040", "name": "ANDHARIAPARA BAZAR HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 11, "girls": 12, "total": 23, "day": 5, "lat": 24.653333, "lon": 90.302139}, {"id": "02-025", "name": "SHIBGANJ HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 13, "girls": 11, "total": 24, "day": 3, "lat": 24.622637, "lon": 90.286662}, {"id": "02-028", "name": "SUSUTI HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 9, "girls": 15, "total": 24, "day": 3, "lat": 24.653612, "lon": 90.260881}, {"id": "02-020", "name": "DHAMAR HIGH SCHOOL (EIIN: 111431)", "district": "Fulbaria", "boys": 12, "girls": 13, "total": 25, "day": 2, "lat": 24.648935, "lon": 90.24201}, {"id": "03-031", "name": "LOHA SHAHAR BAZAR HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 9, "girls": 16, "total": 25, "day": 2, "lat": 24.651048, "lon": 90.303435}, {"id": "03-032", "name": "CHHANKANDA HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 12, "girls": 13, "total": 25, "day": 2, "lat": 24.662314, "lon": 90.282835}, {"id": "03-033", "name": "PALASHTALI AMIRABAD HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 14, "girls": 11, "total": 25, "day": 2, "lat": 24.658286, "lon": 90.278896}, {"id": "03-039", "name": "TELIGRAM HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 11, "girls": 14, "total": 25, "day": 3, "lat": 24.634818, "lon": 90.305881}, {"id": "02-018", "name": "HATILATE HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 14, "girls": 12, "total": 26, "day": 3, "lat": 24.648567, "lon": 90.293376}, {"id": "02-022", "name": "ICHAIL HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 12, "girls": 14, "total": 26, "day": 3, "lat": 24.651155, "lon": 90.261244}, {"id": "03-037", "name": "RAGHUNATHPUR HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 11, "girls": 15, "total": 26, "day": 3, "lat": 24.600984, "lon": 90.252284}, {"id": "03-044", "name": "ADARSHA UCHYA BIDYANIKETAN (EIIN: 111441)", "district": "Fulbaria", "boys": 12, "girls": 14, "total": 26, "day": 3, "lat": 24.651781, "lon": 90.245787}, {"id": "02-021", "name": "BAKTA HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 15, "girls": 12, "total": 27, "day": 3, "lat": 24.661342, "lon": 90.268553}, {"id": "02-023", "name": "ENGINEER SHAMS UDDIN AHMED HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 8, "girls": 19, "total": 27, "day": 4, "lat": 24.631917, "lon": 90.264504}, {"id": "02-019", "name": "SHONTOSPUR HIGH SCHOOL (EIIN: 111436)", "district": "Fulbaria", "boys": 17, "girls": 11, "total": 28, "day": 5, "lat": 24.616411, "lon": 90.24751}, {"id": "02-024", "name": "Nayanmoni High School (Fulbaria)", "district": "Fulbaria", "boys": 12, "girls": 16, "total": 28, "day": 5, "lat": 24.637683, "lon": 90.253937}, {"id": "03-038", "name": "DABARDASTA AMINA CHOWDHURY HIGH SCHOOL (FULBARIA)", "district": "Fulbaria", "boys": 10, "girls": 18, "total": 28, "day": 5, "lat": 24.641562, "lon": 90.299665}, {"id": "08-117", "name": "Mothbari Union High School & College (TRISHAL)", "district": "Trishal", "boys": 5, "girls": 3, "total": 8, "day": 15, "lat": 24.566136, "lon": 90.398519}, {"id": "08-118", "name": "Kanthal High School & College (EIIN: 112240)", "district": "Trishal", "boys": 6, "girls": 6, "total": 12, "day": 15, "lat": 24.588846, "lon": 90.392784}, {"id": "09-121", "name": "GUZIUM AMIRABARI HIGH SCHOOL (EIIN: 112213)", "district": "Trishal", "boys": 4, "girls": 6, "total": 10, "day": 15, "lat": 24.588821, "lon": 90.381875}, {"id": "09-131", "name": "DHANI KOLA DAKKIN VATIPARA HIGH SCHOOL (EIIN: 112232)", "district": "Trishal", "boys": 0, "girls": 9, "total": 9, "day": 15, "lat": 24.54865, "lon": 90.403778}, {"id": "09-132", "name": "SONAKHALI PAZLARCHAR HIGH SCHOOL (EIIN: 112206)", "district": "Trishal", "boys": 2, "girls": 6, "total": 8, "day": 15, "lat": 24.57424, "lon": 90.392563}, {"id": "08-113", "name": "AKHRAIL HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 7, "girls": 10, "total": 17, "day": 15, "lat": 24.595219, "lon": 90.38577}, {"id": "08-115", "name": "MOHAMMADPUR HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 7, "girls": 10, "total": 17, "day": 15, "lat": 24.576843, "lon": 90.389126}, {"id": "09-128", "name": "PORABARI HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 6, "girls": 10, "total": 16, "day": 15, "lat": 24.602098, "lon": 90.365577}, {"id": "08-109", "name": "SAKHUA HIGH SCHOOL (EIIN: 112210)", "district": "Trishal", "boys": 9, "girls": 10, "total": 19, "day": 15, "lat": 24.575893, "lon": 90.357323}, {"id": "08-110", "name": "DUKHU MIA BIDYANIKETON (EIIN: 112226)", "district": "Trishal", "boys": 11, "girls": 10, "total": 21, "day": 14, "lat": 24.611958, "lon": 90.376624}, {"id": "08-112", "name": "BAILOR RAHMANIA HIGH SCHOOL (EIIN: 112200)", "district": "Trishal", "boys": 11, "girls": 9, "total": 20, "day": 14, "lat": 24.595222, "lon": 90.387873}, {"id": "09-123", "name": "SHUKTARA BIDYANIKETAN (EIIN: 130825)", "district": "Trishal", "boys": 9, "girls": 11, "total": 20, "day": 15, "lat": 24.565049, "lon": 90.417616}, {"id": "09-124", "name": "RAYERGRAM SHAHID SMRITI HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 8, "girls": 12, "total": 20, "day": 14, "lat": 24.596833, "lon": 90.390951}, {"id": "08-107", "name": "MOKHAPUR HIGH SCHOOL (EIIN: 112209)", "district": "Trishal", "boys": 12, "girls": 12, "total": 24, "day": 14, "lat": 24.58423, "lon": 90.385125}, {"id": "08-111", "name": "SONAR BANGLA HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 9, "girls": 15, "total": 24, "day": 13, "lat": 24.586918, "lon": 90.398121}, {"id": "08-114", "name": "Kazir Shimla High School", "district": "Trishal", "boys": 9, "girls": 17, "total": 26, "day": 13, "lat": 24.57754, "lon": 90.412395}, {"id": "08-116", "name": "Halima High School", "district": "Trishal", "boys": 9, "girls": 13, "total": 22, "day": 13, "lat": 24.603912, "lon": 90.372502}, {"id": "08-119", "name": "DARI KATHAL HIGH SCHOOL (EIIN: 112205)", "district": "Trishal", "boys": 11, "girls": 15, "total": 26, "day": 13, "lat": 24.565777, "lon": 90.392132}, {"id": "09-125", "name": "EIDGAH HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 12, "girls": 13, "total": 25, "day": 14, "lat": 24.592397, "lon": 90.386068}, {"id": "09-126", "name": "BARAMA HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 14, "girls": 12, "total": 26, "day": 14, "lat": 24.562453, "lon": 90.365076}, {"id": "09-129", "name": "SHAHEED SHABUR HIGH SCHOOL, PANCHPARA (EIIN: 112225)", "district": "Trishal", "boys": 10, "girls": 13, "total": 23, "day": 13, "lat": 24.588112, "lon": 90.376235}, {"id": "09-130", "name": "JOYDA HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 13, "girls": 12, "total": 25, "day": 14, "lat": 24.59006, "lon": 90.382475}, {"id": "08-106", "name": "BAGAN ISLAMIA HIGH SCHOOL (TRISHAL)", "district": "Trishal", "boys": 13, "girls": 14, "total": 27, "day": 14, "lat": 24.577722, "lon": 90.365334}, {"id": "08-108", "name": "SANKI BHANGA HIGH SCHOOL (EIIN: 112228)", "district": "Trishal", "boys": 10, "girls": 19, "total": 29, "day": 14, "lat": 24.572109, "lon": 90.407598}, {"id": "09-122", "name": "DANIKHOLA OSMANIA HIGH SCHOOL (EIIN: 112201)", "district": "Trishal", "boys": 14, "girls": 13, "total": 27, "day": 15, "lat": 24.5945, "lon": 90.420199}, {"id": "09-127", "name": "GOGIAM KACHACHARA JUNIOR SCHOOL (TRISHAL)", "district": "Trishal", "boys": 15, "girls": 13, "total": 28, "day": 15, "lat": 24.584841, "lon": 90.395223}], "upazilas": [{"name": "Bhaluka", "lat": 24.4078575, "lon": 90.3865746, "count": 14}, {"name": "Gouripur", "lat": 24.7545607, "lon": 90.5678273, "count": 14}, {"name": "Haluaghat", "lat": 25.1242115, "lon": 90.3395514, "count": 13}, {"name": "Tarakanda", "lat": 24.8559556, "lon": 90.4879916, "count": 13}, {"name": "Muktagachha", "lat": 24.7646495, "lon": 90.2567893, "count": 15}, {"name": "Mymensingh", "lat": 24.7851062, "lon": 90.3560076, "count": 20}, {"name": "Fulbaria", "lat": 24.6322027, "lon": 90.2707878, "count": 30}, {"name": "Trishal", "lat": 24.5826359, "lon": 90.3947592, "count": 26}]};
+
+const dayColors = ["#9AA39B","#264653","#2A6F77","#2D6A4F","#40916C","#52B788","#74A57F",
+  "#E08E00","#F4A300","#BC6C25","#9C6644","#6D597A","#355070","#B56576","#E56B6F","#6A4C93"];
+function colorForDay(d){ return dayColors[d % dayColors.length]; }
+
+const map = L.map('map', {zoomControl:true}).setView([24.75, 90.45], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:18, attribution:'&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const markers = {};
+const schoolLayer = L.layerGroup().addTo(map);
+const upazilaLayer = L.layerGroup().addTo(map);
+
+DATA.upazilas.forEach(u=>{
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="transform:rotate(45deg);width:16px;height:16px;background:#1B4332;border:2px solid #fff;box-shadow:0 0 0 1px #1B4332;"></div>`,
+    iconSize:[16,16], iconAnchor:[8,8]
+  });
+  const m = L.marker([u.lat,u.lon],{icon:icon, zIndexOffset:1000}).addTo(upazilaLayer);
+  m.bindPopup(`<b>${u.name} Upazila</b><br>${u.count} schools`);
+});
+
+function makeIcon(day){
+  const c = colorForDay(day);
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:13px;height:13px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 0 0 1px ${c};"></div>`,
+    iconSize:[13,13], iconAnchor:[7,7]
+  });
+}
+
+DATA.schools.forEach(s=>{
+  const marker = L.marker([s.lat,s.lon], {icon: makeIcon(s.day)});
+  const dayLabel = s.day===0 ? 'Not scheduled (0 students)' : `Day ${s.day}`;
+  marker.bindPopup(`<b>${s.name}</b><br>${s.district} &middot; ID ${s.id}<br>Boys ${s.boys} / Girls ${s.girls} (${s.total} total)<br><b>${dayLabel}</b>`);
+  marker.on('click', ()=>selectSchool(s.id));
+  markers[s.id] = {marker, data:s};
+  schoolLayer.addLayer(marker);
+});
+
+document.getElementById('statSchools').textContent = DATA.schools.length;
+document.getElementById('statStudents').textContent = DATA.schools.reduce((a,s)=>a+s.total,0);
+
+const dayFilter = document.getElementById('dayFilter');
+const maxDay = Math.max(...DATA.schools.map(s=>s.day));
+dayFilter.innerHTML = '<option value="all">All days</option>' +
+  Array.from({length:maxDay},(_,i)=>i+1).map(d=>`<option value="${d}">Day ${d}</option>`).join('') +
+  '<option value="0">Not scheduled</option>';
+
+const districtFilter = document.getElementById('districtFilter');
+const districts = [...new Set(DATA.schools.map(s=>s.district))].sort();
+districtFilter.innerHTML = '<option value="all">All upazilas</option>' +
+  districts.map(d=>`<option value="${d}">${d}</option>`).join('');
+
+const searchBox = document.getElementById('searchBox');
+let activeId = null;
+
+function render(){
+  const day = dayFilter.value;
+  const dist = districtFilter.value;
+  const q = searchBox.value.trim().toLowerCase();
+
+  const listEl = document.getElementById('list');
+  listEl.innerHTML = '';
+
+  DATA.schools.forEach(s=>{
+    const matchDay = (day==='all') || (String(s.day)===day);
+    const matchDist = (dist==='all') || (s.district===dist);
+    const matchQ = !q || s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
+    const show = matchDay && matchDist && matchQ;
+
+    const rec = markers[s.id];
+    if(show){
+      if(!map.hasLayer(rec.marker)) schoolLayer.addLayer(rec.marker);
+      const row = document.createElement('div');
+      row.className = 'school-row' + (s.id===activeId ? ' active':'');
+      const dayLabel = s.day===0 ? 'Unscheduled' : ('Day '+s.day);
+      row.innerHTML = `<span class="daychip" style="background:${colorForDay(s.day)}">${dayLabel}</span><div class="nm">${s.name}</div><div class="meta">${s.district} &middot; ${s.id} &middot; ${s.total} students</div>`;
+      row.onclick = ()=>{ selectSchool(s.id); map.setView([s.lat,s.lon], 14); rec.marker.openPopup(); };
+      listEl.appendChild(row);
+    } else {
+      if(map.hasLayer(rec.marker)) schoolLayer.removeLayer(rec.marker);
+    }
+  });
+}
+
+function selectSchool(id){
+  activeId = id;
+  render();
+}
+
+dayFilter.addEventListener('change', render);
+districtFilter.addEventListener('change', render);
+searchBox.addEventListener('input', render);
+
+render();
+</script>
+</body>
+</html>
